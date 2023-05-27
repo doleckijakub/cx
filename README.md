@@ -1,6 +1,6 @@
 # CX - C Extended
 
-Since C does not allow many features or is scarse in some I've made this simple program. It parses files in my custom `CX` language, implementing non-native features as needed and translates the code to pure C.
+I've made CX, because C does not allow many features out of the box or is scarse in others. CX parses files in my custom `CX` language, implementing non-native features as needed and translates the code to pure C.
 
 ## Quick start
 
