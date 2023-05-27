@@ -14,6 +14,7 @@ $ ./test
 ## Implemented features
 
 
+- [ ] self hosting
 - [ ] default function parameters
 - [ ] try/catch statements
 - [ ] compile-time calculations
