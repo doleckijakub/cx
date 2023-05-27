@@ -206,6 +206,8 @@ const char* Token_Type_to_string(Token_Type type) {
 		case TOKEN_COLON:
 			return "TOKEN_COLON";
 	}
+	assert(false && "unreachable");
+	return NULL;
 }
 
 typedef struct {
@@ -225,16 +227,16 @@ void Token_print(Token token) {
 	switch(token.type) {
 		case TOKEN_NULL: assert(false && "unreachable"); break;
 		case TOKEN_NAME:
-			printf("'%.*s'\n", token.value_sv.size, token.value_sv.data);
+			printf("'%.*s'\n", (int) token.value_sv.size, token.value_sv.data);
 			break;
 		case TOKEN_NUMBER:
 			printf("%d\n", token.value_int);
 			break;
 		case TOKEN_CHAR:
-			printf("'%.*s'\n", token.value_sv.size, token.value_sv.data);
+			printf("'%.*s'\n", (int) token.value_sv.size, token.value_sv.data);
 			break;
 		case TOKEN_STRING:
-			printf("\"%.*s\"\n", token.value_sv.size, token.value_sv.data);
+			printf("\"%.*s\"\n", (int) token.value_sv.size, token.value_sv.data);
 			break;
 		case TOKEN_OPEN_PARENTHESIS:
 		case TOKEN_OPEN_CURLY:
@@ -376,11 +378,11 @@ Token Lexer_next_token(Lexer* lexer) {
 	literal_tokens['>'] = TOKEN_GREATER_THAN;
 	literal_tokens['!'] = TOKEN_NOT;
 
-	if(literal_tokens[first]) {
+	if(literal_tokens[(int) first]) {
 		Lexer_chop_char(lexer);
 		return (Token) {
 			.location = location,
-			.type = literal_tokens[first],
+			.type = literal_tokens[(int) first],
 			.value_char = lexer->source[lexer->cur - 1]
 		};
 	}
@@ -601,22 +603,22 @@ typedef struct {
 
 // Parser
 
-typedef struct {
-	Lexer *lexer;
-} Parser;
+// typedef struct {
+// 	Lexer *lexer;
+// } Parser;
 
-CX_Expression Parser_parse_expression(Parser *parser) {
+// CX_Expression Parser_parse_expression(Parser *parser) {
 
-}
+// }
 
-CX_Program Parser_parse_program(Parser *parser) {
-	CX_Program program = (CX_Program) { 0 };
+// CX_Program Parser_parse_program(Parser *parser) {
+// 	CX_Program program = (CX_Program) { 0 };
 
-	while(Lexer_is_not_empty(parser->lexer)) {
-		CX_Expression expression = Parser_parse_expression(parser);
+// 	while(Lexer_is_not_empty(parser->lexer)) {
+// 		CX_Expression expression = Parser_parse_expression(parser);
 
-	}
-}
+// 	}
+// }
 
 //
 
