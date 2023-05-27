@@ -10,32 +10,32 @@
 // helpers
 
 void info(char *format, ...) {
-	va_list val;
 	fprintf(stderr, "INFO: ");
+	va_list val;
 	va_start(val, format);
 	vfprintf(stderr, format, val);
 	va_end(val);
 }
 
 void warn(char *format, ...) {
-	va_list val;
 	fprintf(stderr, "WARNING: ");
+	va_list val;
 	va_start(val, format);
 	vfprintf(stderr, format, val);
 	va_end(val);
 }
 
 void error(char *format, ...) {
-	va_list val;
 	fprintf(stderr, "ERROR: ");
+	va_list val;
 	va_start(val, format);
 	vfprintf(stderr, format, val);
 	va_end(val);
 }
 
 void panic(char *format, ...) {
+	fprintf(stderr, "FATAL ERROR: ");
 	va_list val;
-	fprintf(stderr, "ERROR: ");
 	va_start(val, format);
 	vfprintf(stderr, format, val);
 	va_end(val);
@@ -51,14 +51,14 @@ char *consume_arg(int *argc, char ***argv)
 	return result;
 }
 
-// string view
+// StringView
 
 typedef struct {
 	char *data;
 	size_t size;
 } StringView;
 
-// compiler classes
+// Location
 
 typedef struct {
 	char *file_path;
@@ -66,11 +66,22 @@ typedef struct {
 } Location;
 
 void Location_print(Location location, FILE *fp) {
-	fprintf(fp, "%s:%zu:%zu", location.file_path, location.line + 1, location.row + 1);
+	fprintf(fp, "%s:%lu:%lu", location.file_path, (unsigned long) location.line + 1, (unsigned long) location.row + 1);
 }
 
+void loc_error(Location location, char *format, ...) {
+	Location_print(location, stderr);
+	fprintf(stderr, ": ERROR: ");
+	va_list val;
+	va_start(val, format);
+	vfprintf(stderr, format, val);
+	va_end(val);
+}
+
+// Token
+
 typedef enum {
-	NULL_TOKEN,
+	TOKEN_NULL,
 	TOKEN_NAME,
 	TOKEN_OPEN_PARENTHESIS,
 	TOKEN_OPEN_CURLY,
@@ -112,6 +123,91 @@ typedef enum {
 	TOKEN_COLON,
 } Token_Type;
 
+const char* Token_Type_to_string(Token_Type type) {
+	switch(type) {
+		case TOKEN_NULL:
+			return "TOKEN_NULL";
+		case TOKEN_NAME:
+			return "TOKEN_NAME";
+		case TOKEN_OPEN_PARENTHESIS:
+			return "TOKEN_OPEN_PARENTHESIS";
+		case TOKEN_OPEN_CURLY:
+			return "TOKEN_OPEN_CURLY";
+		case TOKEN_CLOSE_PARENTHESIS:
+			return "TOKEN_CLOSE_PARENTHESIS";
+		case TOKEN_CLOSE_CURLY:
+			return "TOKEN_CLOSE_CURLY";
+		case TOKEN_OPEN_SQUARE:
+			return "TOKEN_OPEN_SQUARE";
+		case TOKEN_CLOSE_SQUARE:
+			return "TOKEN_CLOSE_SQUARE";
+		case TOKEN_DOT:
+			return "TOKEN_DOT";
+		case TOKEN_COMMA:
+			return "TOKEN_COMMA";
+		case TOKEN_SEMICOLON:
+			return "TOKEN_SEMICOLON";
+		case TOKEN_EQUALS:
+			return "TOKEN_EQUALS";
+		case TOKEN_NUMBER:
+			return "TOKEN_NUMBER";
+		case TOKEN_STRING:
+			return "TOKEN_STRING";
+		case TOKEN_PLUS:
+			return "TOKEN_PLUS";
+		case TOKEN_PLUS_EQUALS:
+			return "TOKEN_PLUS_EQUALS";
+		case TOKEN_PLUS_PLUS:
+			return "TOKEN_PLUS_PLUS";
+		case TOKEN_MINUS:
+			return "TOKEN_MINUS";
+		case TOKEN_MINUS_EQUALS:
+			return "TOKEN_MINUS_EQUALS";
+		case TOKEN_MINUS_MINUS:
+			return "TOKEN_MINUS_MINUS";
+		case TOKEN_ASTERISK:
+			return "TOKEN_ASTERISK";
+		case TOKEN_TIMES_EQUALS:
+			return "TOKEN_TIMES_EQUALS";
+		case TOKEN_SLASH:
+			return "TOKEN_SLASH";
+		case TOKEN_DIVIDE_EQUALS:
+			return "TOKEN_DIVIDE_EQUALS";
+		case TOKEN_LESS_THAN:
+			return "TOKEN_LESS_THAN";
+		case TOKEN_GREATER_THAN:
+			return "TOKEN_GREATER_THAN";
+		case TOKEN_NOT:
+			return "TOKEN_NOT";
+		case TOKEN_ARROW:
+			return "TOKEN_ARROW";
+		case TOKEN_CHAR:
+			return "TOKEN_CHAR";
+		case TOKEN_AMPERSTAND:
+			return "TOKEN_AMPERSTAND";
+		case TOKEN_AND_EQUALS:
+			return "TOKEN_AND_EQUALS";
+		case TOKEN_LOGIC_AND:
+			return "TOKEN_LOGIC_AND";
+		case TOKEN_PIPE:
+			return "TOKEN_PIPE";
+		case TOKEN_OR_EQUALS:
+			return "TOKEN_OR_EQUALS";
+		case TOKEN_LOGIC_OR:
+			return "TOKEN_LOGIC_OR";
+		case TOKEN_XOR:
+			return "TOKEN_XOR";
+		case TOKEN_XOR_EQUALS:
+			return "TOKEN_XOR_EQUALS";
+		case TOKEN_MOD:
+			return "TOKEN_MOD";
+		case TOKEN_MOD_EQUALS:
+			return "TOKEN_MOD_EQUALS";
+		case TOKEN_COLON:
+			return "TOKEN_COLON";
+	}
+}
+
 typedef struct {
 	Location location;
 	Token_Type type;
@@ -125,22 +221,20 @@ typedef struct {
 void Token_print(Token token) {
 	if(!token.type) return;
 	Location_print(token.location, stderr);
-	fprintf(stderr, ": ");
+	fprintf(stderr, ": %s ", Token_Type_to_string(token.type));
 	switch(token.type) {
-		case NULL_TOKEN:
-			printf("NULL_TOKEN\n");
-			break;
+		case TOKEN_NULL: assert(false && "unreachable"); break;
 		case TOKEN_NAME:
-			printf("TOKEN_NAME '%.*s'\n", token.value_sv.size, token.value_sv.data);
+			printf("'%.*s'\n", token.value_sv.size, token.value_sv.data);
 			break;
 		case TOKEN_NUMBER:
-			printf("TOKEN_NUMBER %d\n", token.value_int);
+			printf("%d\n", token.value_int);
 			break;
 		case TOKEN_CHAR:
-			printf("TOKEN_CHAR '%.*s'\n", token.value_sv.size, token.value_sv.data);
+			printf("'%.*s'\n", token.value_sv.size, token.value_sv.data);
 			break;
 		case TOKEN_STRING:
-			printf("TOKEN_STRING \"%.*s\"\n", token.value_sv.size, token.value_sv.data);
+			printf("\"%.*s\"\n", token.value_sv.size, token.value_sv.data);
 			break;
 		case TOKEN_OPEN_PARENTHESIS:
 		case TOKEN_OPEN_CURLY:
@@ -156,7 +250,7 @@ void Token_print(Token token) {
 		case TOKEN_GREATER_THAN:
 		case TOKEN_NOT:
 		case TOKEN_COLON:
-			printf("TOKEN '%c'\n", token.value_char);
+			printf("'%c'\n", token.value_char);
 			break;
 		case TOKEN_PLUS:
 		case TOKEN_MINUS:
@@ -166,7 +260,7 @@ void Token_print(Token token) {
 		case TOKEN_PIPE:
 		case TOKEN_XOR:
 		case TOKEN_MOD:
-			printf("TOKEN '%.1s'\n", token.value_sv.data);
+			printf("'%.1s'\n", token.value_sv.data);
 			break;
 		case TOKEN_PLUS_EQUALS:
 		case TOKEN_PLUS_PLUS:
@@ -181,10 +275,12 @@ void Token_print(Token token) {
 		case TOKEN_MOD_EQUALS:
 		case TOKEN_LOGIC_AND:
 		case TOKEN_LOGIC_OR:
-			printf("TOKEN '%.2s'\n", token.value_sv.data);
+			printf("'%.2s'\n", token.value_sv.data);
 			break;
 	}
 }
+
+// Lexer
 
 typedef struct {
 	char *file_path;
@@ -445,10 +541,81 @@ Token Lexer_next_token(Lexer* lexer) {
 
 	not_operand:
 
-	Location_print(location, stderr);
-	fprintf(stderr, ": ");
-	error("unknown token starts with '%c'\n", first);
+	loc_error(location, "unknown token starts with '%c'\n", first);
 	return (Token) { 0 };
+}
+
+Token Lexer_expect_token(Lexer *lexer, ...) {
+	Token token = Lexer_next_token(lexer);
+	if(!token.type) {
+		loc_error(token.location, "expected '");
+		va_list val;
+		va_start(val, lexer);
+		printf("%s", Token_Type_to_string(va_arg(val, Token_Type)));
+		Token_Type t = va_arg(val, Token_Type);
+		while(t) {
+			printf(" or %s", Token_Type_to_string(t));
+			t = va_arg(val, Token_Type);
+		}
+		va_end(val);
+		fprintf(stderr, "' but file ended\n");
+	}
+
+	{
+		va_list val;
+		Token_Type t;
+		do {
+			t = va_arg(val, Token_Type);
+			if(t == token.type) return token;
+		} while(t);
+		va_end(val);
+	}
+
+	{
+		loc_error(token.location, "expected '");
+		va_list val;
+		va_start(val, lexer);
+		printf("%s", Token_Type_to_string(va_arg(val, Token_Type)));
+		Token_Type t = va_arg(val, Token_Type);
+		while(t) {
+			printf(" or %s", Token_Type_to_string(t));
+			t = va_arg(val, Token_Type);
+		}
+		va_end(val);
+		fprintf(stderr, "' but got '%s'\n", Token_Type_to_string(token.type));
+
+		return (Token) { 0 };
+	}
+}
+
+// AST
+
+typedef struct {
+
+} CX_Expression;
+
+typedef struct {
+	CX_Expression *expressions;
+	size_t expression_sz;
+} CX_Program;
+
+// Parser
+
+typedef struct {
+	Lexer *lexer;
+} Parser;
+
+CX_Expression Parser_parse_expression(Parser *parser) {
+
+}
+
+CX_Program Parser_parse_program(Parser *parser) {
+	CX_Program program = (CX_Program) { 0 };
+
+	while(Lexer_is_not_empty(parser->lexer)) {
+		CX_Expression expression = Parser_parse_expression(parser);
+
+	}
 }
 
 //
@@ -512,18 +679,27 @@ int main(int argc, char **argv) {
 		panic("could not open file: %s\n", source_filename);
 	}
 
+	info("Lexical analysis\n");
+
 	Lexer lexer = {
 		.file_path = source_filename,
 		.source = source_code,
 		.source_len = source_len
 	};
 
-	Token token;
+	info("Parsing\n");
 
-	do {
-		token = Lexer_next_token(&lexer);
-		Token_print(token);
-	} while(token.type);
+	printf("%d\n", Lexer_expect_token(&lexer, TOKEN_STRING, TOKEN_COMMA, 0).type);
+
+	// Parser parser = {
+
+	// }
+
+	info("Semantic analysis\n");
+
+	info("Optimization\n");
+
+	info("Code generation\n");
 
 	free(source_code);
 
