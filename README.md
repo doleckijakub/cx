@@ -4,11 +4,11 @@ I've made CX, because C does not allow many features out of the box or is scarse
 
 ## Quick start
 
+As for now the only possible output of the code is the AST, it can be seen usign the `--dump-ast` flag like so
+
 ```console
 $ gcc -o cx cx.c
-$ ./cx test.cx > test.c
-$ gcc -o test test.c
-$ ./test
+$ ./cx test.cx --dump-ast | jq
 ```
 
 ## Implemented features
