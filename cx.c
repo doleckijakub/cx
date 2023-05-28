@@ -327,6 +327,7 @@ void Token_print(Token token) {
 }
 
 DECLARE_DARRAY(Token)
+DECLARE_DARRAY(char)
 
 // Lexer
 
@@ -649,6 +650,27 @@ void usage(char *program_name) {
 
 }
 
+void alloc_file_content(DARRAY(char) *array, char *filename, const char *mode) {
+	FILE *fp = fopen(filename, "r");
+
+	if(fp) {
+		fseek(fp, 0, SEEK_END);
+		DARRAY_INIT(char)(array, ftell(fp) + 1);
+		fseek(fp, 0, SEEK_SET);
+		array->len = fread(array->data, 1, array->_allocated, fp);
+		if(errno) {
+			DARRAY_FREE(char)(array);
+			fclose(fp);
+			panic("error reading file %s: %s\n", filename, strerror(errno));
+		}
+		array->data[array->len] = 0;
+	} else {
+		panic("could not open file: %s\n", filename);
+	}
+
+	fclose(fp);
+}
+
 int main(int argc, char **argv) {
 	char *program_name = consume_arg(&argc, &argv);
 	char *source_filename = NULL;
@@ -677,42 +699,18 @@ int main(int argc, char **argv) {
 
 	info("Lexical analysis\n");
 
-	char *source_code;
+	DARRAY(char) source_code;
 
 	DARRAY(Token) tokens;
 	DARRAY_INIT(Token)(&tokens, 1000);
 
 	{
-
-		FILE *fp = fopen(source_filename, "r");
-
-		long source_len;
-
-		if(fp) {
-			fseek(fp, 0, SEEK_END);
-			source_len = ftell(fp);
-			fseek(fp, 0, SEEK_SET);
-			source_code = malloc(source_len);
-			if(source_code) {
-				source_len = fread(source_code, 1, source_len, fp);
-				if(errno) {
-					fclose(fp);
-					free(source_code);
-					panic("error reading file %s: %s\n", source_filename, strerror(errno));
-				}
-			} else {
-				fclose(fp);
-				panic("could not allocate %db of memory", source_len);
-			}
-			fclose(fp);
-		} else {
-			panic("could not open file: %s\n", source_filename);
-		}
-
+		alloc_file_content(&source_code, source_filename, "r");
+		
 		Lexer lexer = {
 			.file_path = source_filename,
-			.source = source_code,
-			.source_len = source_len
+			.source = source_code.data,
+			.source_len = source_code.len
 		};
 
 		while(Lexer_is_not_empty(&lexer)) {
@@ -741,7 +739,7 @@ int main(int argc, char **argv) {
 
 	info("Code generation\n");
 
-	free(source_code);
+	DARRAY_FREE(char)(&source_code);
 
 	return 0;
 }
