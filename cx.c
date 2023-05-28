@@ -9,31 +9,31 @@
 
 // debug
 
-#define DEBUG 0
+#define DEBUG 1
 
 #if DEBUG
-#	define DEBUG_FPRINTF fprintf
+#	define DEBUG_TRACE(...) fprintf(stderr, "[TRACE]: " __VA_ARGS__)
 #else
-#	define DEBUG_FPRINTF
+#	define DEBUG_TRACE(...)
 #endif
 
 // helpers
 
-void info(char *format, ...) {
-	fprintf(stderr, "INFO: ");
-	va_list val;
-	va_start(val, format);
-	vfprintf(stderr, format, val);
-	va_end(val);
-}
+// void info(char *format, ...) {
+// 	fprintf(stderr, "INFO: ");
+// 	va_list val;
+// 	va_start(val, format);
+// 	vfprintf(stderr, format, val);
+// 	va_end(val);
+// }
 
-void warn(char *format, ...) {
-	fprintf(stderr, "WARNING: ");
-	va_list val;
-	va_start(val, format);
-	vfprintf(stderr, format, val);
-	va_end(val);
-}
+// void warn(char *format, ...) {
+// 	fprintf(stderr, "WARNING: ");
+// 	va_list val;
+// 	va_start(val, format);
+// 	vfprintf(stderr, format, val);
+// 	va_end(val);
+// }
 
 void error(char *format, ...) {
 	fprintf(stderr, "ERROR: ");
@@ -106,6 +106,63 @@ typedef struct {
 	char *data;
 	size_t size;
 } StringView;
+
+#define PRIsv "%.*s"
+#define PRIsv_arg(sv) (int) (sv).size, (sv).data
+
+StringView sv_from_cstr(const char *str) {
+	StringView s;
+	s.data = (char*) str;
+	s.size = strlen(str);
+	return s;
+}
+
+bool sveq(StringView *a, StringView *b) {
+	if(a->size != b->size) return false;
+	for(size_t i = 0; i < a->size; ++i)
+		if(a->data[i] != b->data[i])
+			return false;
+	return true;
+}
+
+// "HashMap"
+
+FORWARD_DECLARE_DARRAY(StringView)
+DECLARE_DARRAY(StringView)
+
+typedef struct {
+	DARRAY(StringView) _from, _to;
+} HashMap;
+
+void HashMap_init(HashMap *h) {
+	DARRAY_INIT(StringView)(&h->_from, 1);
+	DARRAY_INIT(StringView)(&h->_to, 1);
+}
+
+StringView *HashMap_at(HashMap *h, StringView from) {
+	for(size_t i = 0; i < h->_from.len; ++i) {
+		if(sveq(&h->_from.data[i], &from)) {
+			return &h->_to.data[i];
+		}
+	}
+	return NULL;
+}
+
+void HashMap_put(HashMap *h, StringView from, StringView to) {
+	for(size_t i = 0; i < h->_from.len; ++i) {
+		if(sveq(&h->_from.data[i], &from)) {
+			h->_to.data[i] = to;
+			return;
+		}
+	}
+	DARRAY_PUSH(StringView)(&h->_from, from);
+	DARRAY_PUSH(StringView)(&h->_to, to);
+}
+
+void HashMap_free(HashMap *h) {
+	DARRAY_FREE(StringView)(&h->_from);
+	DARRAY_FREE(StringView)(&h->_to);
+}
 
 // Location
 
@@ -289,16 +346,16 @@ void Token_print(Token token) {
 	switch(token.type) {
 		case TOKEN_NULL: assert(false && "unreachable"); break;
 		case TOKEN_NAME:
-			printf("'%.*s'\n", (int) token.value_sv.size, token.value_sv.data);
+			printf("'" PRIsv "'\n", PRIsv_arg(token.value_sv));
 			break;
 		case TOKEN_NUMBER:
 			printf("%d\n", token.value_int);
 			break;
 		case TOKEN_CHAR:
-			printf("'%.*s'\n", (int) token.value_sv.size, token.value_sv.data);
+			printf("'" PRIsv "'\n", PRIsv_arg(token.value_sv));
 			break;
 		case TOKEN_STRING:
-			printf("\"%.*s\"\n", (int) token.value_sv.size, token.value_sv.data);
+			printf("\"" PRIsv "\"\n", PRIsv_arg(token.value_sv));
 			break;
 		case TOKEN_OPEN_PARENTHESIS:
 		case TOKEN_OPEN_CURLY:
@@ -614,9 +671,9 @@ Token Lexer_next_token(Lexer* lexer) {
 typedef enum {
 	CX_AST_NODE_TYPE_NULL,
 	CX_AST_NODE_TYPE_ROOT,
-	CX_AST_NODE_TYPE_NUMBER, // value:NUMBER
+	// CX_AST_NODE_TYPE_NUMBER, // value:NUMBER
 	// CX_AST_NODE_TYPE_STRING, // value:STRING
-	CX_AST_NODE_TYPE_DATA_TYPE, // name:NAME
+	// CX_AST_NODE_TYPE_DATA_TYPE, // name:NAME
 	// CX_AST_NODE_TYPE_VARIABLE, // name:NAME
 	CX_AST_NODE_TYPE_FUNCTION, // name:NAME, types:[NAME], names:[NAME], body:AST
 	// CX_AST_NODE_TYPE_FUNCALL, // func:AST, args:[AST]
@@ -635,15 +692,15 @@ struct CX_AST_Node {
 			size_t len;
 			size_t _allocated;
 		} u_root;
+		// struct {
+		// 	Token value;
+		// } u_number;
+		// struct {
+		// 	Token name;
+		// } u_data_type;
 		struct {
-			int value;
-		} u_number;
-		struct {
-			StringView name;
-		} u_data_type;
-		struct {
-			StringView data_type;
-			StringView name;
+			Token data_type;
+			Token name;
 			// TODO: types
 			// TODO: names
 			CX_AST_Node *body;
@@ -663,8 +720,8 @@ void CX_AST_Node_free(CX_AST_Node node) {
 				CX_AST_Node_free(node.u_root.data[i]);
 			DARRAY_FREE(CX_AST_Node)((DARRAY(CX_AST_Node)*) &node.u_root);
 			break;
-		case CX_AST_NODE_TYPE_NUMBER:
-		case CX_AST_NODE_TYPE_DATA_TYPE:
+		// case CX_AST_NODE_TYPE_NUMBER:
+		// case CX_AST_NODE_TYPE_DATA_TYPE:
 		case CX_AST_NODE_TYPE_FUNCTION:
 		default:
 			break;
@@ -687,14 +744,11 @@ void CX_AST_Node_print_json(CX_AST_Node *node, FILE *sink) {
 			}
 			fprintf(sink, "]}");
 			break;
-		case CX_AST_NODE_TYPE_NUMBER:
-			fprintf(sink, "\"number\":%d", node->u_number.value);
-			break;
-		case CX_AST_NODE_TYPE_DATA_TYPE:
-			fprintf(sink, "\"data_type\":\"%.*s\"", (int) node->u_data_type.name.size, node->u_data_type.name.data);
-			break;
 		case CX_AST_NODE_TYPE_FUNCTION:
-			fprintf(sink, "\"function\":{\"type\":\"%.*s\",\"name\":\"%.*s\",\"body\":", (int) node->u_function.data_type.size, node->u_function.data_type.data, (int) node->u_function.name.size, node->u_function.name.data);
+			fprintf(sink, "\"function\":{\"type\":\"" PRIsv "\",\"name\":\"" PRIsv "\",\"body\":",
+				PRIsv_arg(node->u_function.data_type.value_sv),
+				PRIsv_arg(node->u_function.name.value_sv)
+			);
 			CX_AST_Node_print_json(node->u_function.body, sink);
 			fprintf(sink, "}");
 			break;
@@ -724,22 +778,19 @@ Token Parser_next_token(Parser *parser) {
 	}
 }
 
-Token __IMPL__Parser_expect_token(Parser *parser, ...) {
+Token __IMPL__Parser_expect_token(bool necessary, Parser *parser, ...) {
 	Token token = Parser_next_token(parser);
 	if(!token.type) {
-#if DEBUG
-		loc_error(token.location, "expected '");
-#endif
 		va_list val;
 		va_start(val, parser);
-		DEBUG_FPRINTF(stderr, "%s", Token_Type_to_string(va_arg(val, Token_Type)));
+		if(necessary) loc_error(token.location, "expected '%s", Token_Type_to_string(va_arg(val, Token_Type)));
 		Token_Type t = va_arg(val, Token_Type);
 		while(t) {
-			DEBUG_FPRINTF(stderr, " or %s", Token_Type_to_string(t));
+			if(necessary) fprintf(stderr, " or %s", Token_Type_to_string(t));
 			t = va_arg(val, Token_Type);
 		}
 		va_end(val);
-		DEBUG_FPRINTF(stderr, "' but file ended\n");
+		if(necessary) fprintf(stderr, "' but file ended\n");
 	}
 
 	{
@@ -754,53 +805,47 @@ Token __IMPL__Parser_expect_token(Parser *parser, ...) {
 	}
 
 	{
-		loc_error(token.location, "expected '");
 		va_list val;
 		va_start(val, parser);
-		DEBUG_FPRINTF(stderr, "%s", Token_Type_to_string(va_arg(val, Token_Type)));
+		if(necessary) loc_error(token.location, "expected '%s", Token_Type_to_string(va_arg(val, Token_Type)));
 		Token_Type t = va_arg(val, Token_Type);
 		while(t) {
-			DEBUG_FPRINTF(stderr, " or %s", Token_Type_to_string(t));
+			if(necessary) fprintf(stderr, " or %s", Token_Type_to_string(t));
 			t = va_arg(val, Token_Type);
 		}
 		va_end(val);
-		DEBUG_FPRINTF(stderr, "' but got '%s'\n", Token_Type_to_string(token.type));
+		if(necessary) fprintf(stderr, "' but got '%s'\n", Token_Type_to_string(token.type));
 
 		return (Token) { 0 };
 	}
 }
 
-#define Parser_expect_token(parser, ...) __IMPL__Parser_expect_token(parser, __VA_ARGS__, 0)
+#define Parser_expect_token(n, p, ...) __IMPL__Parser_expect_token(n, p, __VA_ARGS__, 0)
 
 bool Parser_next_function(Parser *parser, CX_AST_Node *node) {
-
-	Token data_type = Parser_expect_token(parser, TOKEN_NAME);
+	Token data_type = Parser_expect_token(false, parser, TOKEN_NAME);
 	if(!data_type.type) return false;
-	node->u_function.data_type = data_type.value_sv;
+	node->u_function.data_type = data_type;
 
-
-	Token name = Parser_expect_token(parser, TOKEN_NAME);
+	Token name = Parser_expect_token(false, parser, TOKEN_NAME);
 	if(!name.type) return false;
-	node->u_function.name = name.value_sv;
+	node->u_function.name = name;
 
-
-	Token op = Parser_expect_token(parser, TOKEN_OPEN_PARENTHESIS);
+	Token op = Parser_expect_token(false, parser, TOKEN_OPEN_PARENTHESIS);
 	if(!op.type) return false;
 
+	// TODO: parse parameters
 
-	Token cp = Parser_expect_token(parser, TOKEN_CLOSE_PARENTHESIS);
+	Token cp = Parser_expect_token(false, parser, TOKEN_CLOSE_PARENTHESIS);
 	if(!cp.type) return false;
 
-
-	Token oc = Parser_expect_token(parser, TOKEN_OPEN_CURLY);
+	Token oc = Parser_expect_token(false, parser, TOKEN_OPEN_CURLY);
 	if(!oc.type) return false;
 
 	node->u_function.body = NULL; // TODO: parse function body
 
-
-	Token cc = Parser_expect_token(parser, TOKEN_CLOSE_CURLY);
+	Token cc = Parser_expect_token(false, parser, TOKEN_CLOSE_CURLY);
 	if(!cc.type) return false;
-
 
 	node->type = CX_AST_NODE_TYPE_FUNCTION;
 	return true;
@@ -813,6 +858,31 @@ void Parser_next_node(Parser *parser, CX_AST_Node *node) {
 	{ // function
 		if(Parser_next_function(parser, node)) return;
 		parser->cur = saved_cur;
+	}
+}
+
+// Semantic analysis
+
+typedef struct {
+	HashMap *data_types;
+} SemanticStructure;
+
+void analyse_semantics(CX_AST_Node *ast, SemanticStructure *semantic_structure) {
+	if(ast) switch(ast->type) {
+		case CX_AST_NODE_TYPE_NULL:
+			assert(false && "unreachable");
+			break;
+		case CX_AST_NODE_TYPE_ROOT:
+			for(size_t i = 0; i < ast->u_root.len; ++i)
+				analyse_semantics(&ast->u_root.data[i], semantic_structure);
+			break;
+		case CX_AST_NODE_TYPE_FUNCTION:
+			if(!HashMap_at(semantic_structure->data_types, ast->u_function.data_type.value_sv))
+				loc_error(ast->u_function.data_type.location, "unknown data type: " PRIsv "\n", PRIsv_arg(ast->u_function.data_type.value_sv));
+			analyse_semantics(ast->u_function.body, semantic_structure);
+			break;
+		default:
+			break;
 	}
 }
 
@@ -830,7 +900,7 @@ void usage(char *program_name, FILE *sink) {
 }
 
 void alloc_file_content(DARRAY(char) *array, char *filename, const char *mode) {
-	FILE *fp = fopen(filename, "r");
+	FILE *fp = fopen(filename, mode);
 
 	if(fp) {
 		fseek(fp, 0, SEEK_END);
@@ -850,10 +920,12 @@ void alloc_file_content(DARRAY(char) *array, char *filename, const char *mode) {
 	fclose(fp);
 }
 
+char *program_name = NULL;
+char *source_filename = NULL;
+bool dump_ast = false;
+
 int main(int argc, char **argv) {
-	char *program_name = consume_arg(&argc, &argv);
-	char *source_filename = NULL;
-	bool dump_ast = false;
+	program_name = consume_arg(&argc, &argv);
 
 	while (argc) {
 		char *flag = consume_arg(&argc, &argv);
@@ -879,67 +951,90 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 
-	info("Lexical analysis\n");
-
-	DARRAY(char) source_code;
-
-	DARRAY(Token) tokens;
-	DARRAY_INIT(Token)(&tokens, 1000);
-
 	{
-		alloc_file_content(&source_code, source_filename, "r");
-		
-		Lexer lexer = {
-			.file_path = source_filename,
-			.source = source_code.data,
-			.source_len = source_code.len
-		};
+		DARRAY(char) source_code;
+		DARRAY(Token) tokens;
+		CX_AST_Node root;
+		HashMap data_type_translations;
 
-		while(Lexer_is_not_empty(&lexer)) {
-			Token token = Lexer_next_token(&lexer);
-			// Token_print(token);
-			DARRAY_PUSH(Token)(&tokens, token);
+		{
+			DEBUG_TRACE("Lexical analysis\n");
+
+			alloc_file_content(&source_code, source_filename, "r");
+			
+			Lexer lexer = {
+				.file_path = source_filename,
+				.source = source_code.data,
+				.source_len = source_code.len
+			};
+
+			DARRAY_INIT(Token)(&tokens, 1);
+
+			while(Lexer_is_not_empty(&lexer)) {
+				Token token = Lexer_next_token(&lexer);
+				DARRAY_PUSH(Token)(&tokens, token);
+			}
+
 		}
 
-	}
+		{
+			DEBUG_TRACE("Parsing\n");
 
-	info("Parsing\n");
+			Parser parser = {
+				.tokens = &tokens,
+				.cur = 0
+			};
 
-	{
+			CX_AST_Node_root(&root);
 
-		Parser parser = {
-			.tokens = &tokens,
-			.cur = 0
-		};
+			while(true) {
+				CX_AST_Node node;
+				Parser_next_node(&parser, &node);
+				if(node.type) {
+					DARRAY_PUSH(CX_AST_Node)((DARRAY(CX_AST_Node)*) &root.u_root, node);
+				} else {
+					break;
+				}
+			};
 
-		CX_AST_Node root;
-		CX_AST_Node_root(&root);
+			if(dump_ast) CX_AST_Node_print_json(&root, stdout);
 
-		do {
-			CX_AST_Node node;
-			Parser_next_node(&parser, &node);
-			if(node.type) {
-				DARRAY_PUSH(CX_AST_Node)((DARRAY(CX_AST_Node)*) &root.u_root, node);
-			} else {
-				break;
-			}
-		} while(true);
+		}
 
-		if(dump_ast) CX_AST_Node_print_json(&root, stdout);
+		{
+			DEBUG_TRACE("Semantic analysis\n");
 
+			HashMap_init(&data_type_translations);
+
+			HashMap_put(&data_type_translations, sv_from_cstr("b8"), sv_from_cstr("_Bool"));
+			// HashMap_put(&data_type_translations, sv_from_cstr("b32"), sv_from_cstr("int"));
+			HashMap_put(&data_type_translations, sv_from_cstr("i8"),  sv_from_cstr("signed char"));
+			HashMap_put(&data_type_translations, sv_from_cstr("i16"), sv_from_cstr("signed short"));
+			HashMap_put(&data_type_translations, sv_from_cstr("i32"), sv_from_cstr("signed int"));
+			HashMap_put(&data_type_translations, sv_from_cstr("i64"), sv_from_cstr("signed long long"));
+			HashMap_put(&data_type_translations, sv_from_cstr("u8"),  sv_from_cstr("unsigned char"));
+			HashMap_put(&data_type_translations, sv_from_cstr("u16"), sv_from_cstr("unsigned short"));
+			HashMap_put(&data_type_translations, sv_from_cstr("u32"), sv_from_cstr("unsigned int"));
+			HashMap_put(&data_type_translations, sv_from_cstr("u64"), sv_from_cstr("unsigned long long"));
+			HashMap_put(&data_type_translations, sv_from_cstr("f32"), sv_from_cstr("float"));
+			HashMap_put(&data_type_translations, sv_from_cstr("f64"), sv_from_cstr("double"));
+
+			SemanticStructure semantic_structure = {
+				.data_types = &data_type_translations
+			};
+
+			analyse_semantics(&root, &semantic_structure);
+		}
+
+		{
+			DEBUG_TRACE("Code generation\n");
+		}
+
+		HashMap_free(&data_type_translations);
 		CX_AST_Node_free(root);
-
+		DARRAY_FREE(Token)(&tokens);
+		DARRAY_FREE(char)(&source_code);
 	}
-
-	DARRAY_FREE(Token)(&tokens);
-
-	info("Semantic analysis\n");
-
-	info("Optimization\n");
-
-	info("Code generation\n");
-
-	DARRAY_FREE(char)(&source_code);
 
 	return 0;
 }
