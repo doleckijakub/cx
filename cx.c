@@ -7,6 +7,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+// debug
+
+#define DEBUG 0
+
+#if DEBUG
+#	define DEBUG_FPRINTF fprintf
+#else
+#	define DEBUG_FPRINTF
+#endif
+
 // helpers
 
 void info(char *format, ...) {
@@ -57,13 +67,15 @@ char *consume_arg(int *argc, char ***argv)
 #define DARRAY_INIT(T) darray_init_##T
 #define DARRAY_PUSH(T) darray_push_##T
 #define DARRAY_FREE(T) darray_free_##T
+#define FORWARD_DECLARE_DARRAY(T)	\
+typedef struct DARRAY(T) DARRAY(T);
 #define DECLARE_DARRAY(T)										\
 																\
-typedef struct {												\
+struct DARRAY(T) {												\
 	T *data;													\
 	size_t len;													\
 	size_t _allocated;											\
-} DARRAY(T);													\
+};																\
 																\
 void DARRAY_INIT(T)(DARRAY(T) *da, size_t n) {					\
 	da->data = malloc(n * sizeof(T));							\
@@ -84,6 +96,9 @@ void DARRAY_FREE(T)(DARRAY(T) *da) {							\
 	da->data = NULL;											\
 	da->len = da->_allocated = 0;								\
 }
+
+FORWARD_DECLARE_DARRAY(char)
+DECLARE_DARRAY(char)
 
 // StringView
 
@@ -264,6 +279,9 @@ typedef struct {
 	};
 } Token;
 
+FORWARD_DECLARE_DARRAY(Token)
+DECLARE_DARRAY(Token)
+
 void Token_print(Token token) {
 	if(!token.type) return;
 	Location_print(token.location, stderr);
@@ -325,9 +343,6 @@ void Token_print(Token token) {
 			break;
 	}
 }
-
-DECLARE_DARRAY(Token)
-DECLARE_DARRAY(char)
 
 // Lexer
 
@@ -594,25 +609,143 @@ Token Lexer_next_token(Lexer* lexer) {
 	return (Token) { 0 };
 }
 
-Token Lexer_expect_token(Lexer *lexer, ...) {
-	Token token = Lexer_next_token(lexer);
+// AST
+
+typedef enum {
+	CX_AST_NODE_TYPE_NULL,
+	CX_AST_NODE_TYPE_ROOT,
+	CX_AST_NODE_TYPE_NUMBER, // value:NUMBER
+	// CX_AST_NODE_TYPE_STRING, // value:STRING
+	CX_AST_NODE_TYPE_DATA_TYPE, // name:NAME
+	// CX_AST_NODE_TYPE_VARIABLE, // name:NAME
+	CX_AST_NODE_TYPE_FUNCTION, // name:NAME, types:[NAME], names:[NAME], body:AST
+	// CX_AST_NODE_TYPE_FUNCALL, // func:AST, args:[AST]
+} CX_AST_Node_Type;
+
+typedef struct CX_AST_Node CX_AST_Node;
+
+FORWARD_DECLARE_DARRAY(CX_AST_Node)
+
+struct CX_AST_Node {
+	CX_AST_Node_Type type;
+	CX_AST_Node *parent;
+	union {
+		struct {
+			CX_AST_Node *data;
+			size_t len;
+			size_t _allocated;
+		} u_root;
+		struct {
+			int value;
+		} u_number;
+		struct {
+			StringView name;
+		} u_data_type;
+		struct {
+			StringView data_type;
+			StringView name;
+			// TODO: types
+			// TODO: names
+			CX_AST_Node *body;
+		} u_function;
+	};
+};
+
+DECLARE_DARRAY(CX_AST_Node)
+
+void CX_AST_Node_free(CX_AST_Node node) {
+	switch(node.type) {
+		case CX_AST_NODE_TYPE_NULL:
+			assert(false && "unreachable");
+			break;
+		case CX_AST_NODE_TYPE_ROOT:
+			for(size_t i = 0; i < node.u_root.len; ++i)
+				CX_AST_Node_free(node.u_root.data[i]);
+			DARRAY_FREE(CX_AST_Node)((DARRAY(CX_AST_Node)*) &node.u_root);
+			break;
+		case CX_AST_NODE_TYPE_NUMBER:
+		case CX_AST_NODE_TYPE_DATA_TYPE:
+		case CX_AST_NODE_TYPE_FUNCTION:
+		default:
+			break;
+	}
+}
+
+void CX_AST_Node_print_json(CX_AST_Node *node, FILE *sink) {
+	fprintf(sink, "{");
+	if(node) switch(node->type) {
+		case CX_AST_NODE_TYPE_NULL:
+			assert(false && "unreachable");
+			break;
+		case CX_AST_NODE_TYPE_ROOT:
+			fprintf(sink, "\"root\":{\"children\":[");
+			if(node->u_root.len > 0)
+				CX_AST_Node_print_json(&node->u_root.data[0], sink);
+			for(size_t i = 1; i < node->u_root.len; ++i) {
+				fprintf(sink, ",");
+				CX_AST_Node_print_json(&node->u_root.data[i], sink);
+			}
+			fprintf(sink, "]}");
+			break;
+		case CX_AST_NODE_TYPE_NUMBER:
+			fprintf(sink, "\"number\":%d", node->u_number.value);
+			break;
+		case CX_AST_NODE_TYPE_DATA_TYPE:
+			fprintf(sink, "\"data_type\":\"%.*s\"", (int) node->u_data_type.name.size, node->u_data_type.name.data);
+			break;
+		case CX_AST_NODE_TYPE_FUNCTION:
+			fprintf(sink, "\"function\":{\"type\":\"%.*s\",\"name\":\"%.*s\",\"body\":", (int) node->u_function.data_type.size, node->u_function.data_type.data, (int) node->u_function.name.size, node->u_function.name.data);
+			CX_AST_Node_print_json(node->u_function.body, sink);
+			fprintf(sink, "}");
+			break;
+		default:
+			assert(false && "unreachable");
+			break;
+	}
+	fprintf(sink, "}");
+}
+
+void CX_AST_Node_root(CX_AST_Node *root) {
+	root->type = CX_AST_NODE_TYPE_ROOT;
+    root->parent = NULL;
+	DARRAY_INIT(CX_AST_Node)((DARRAY(CX_AST_Node)*) &root->u_root, 1);
+}
+
+typedef struct {
+	DARRAY(Token) *tokens;
+	size_t cur;
+} Parser;
+
+Token Parser_next_token(Parser *parser) {
+	if(parser->cur < parser->tokens->len) {
+		return parser->tokens->data[parser->cur++];
+	} else {
+		return (Token) { 0 };
+	}
+}
+
+Token __IMPL__Parser_expect_token(Parser *parser, ...) {
+	Token token = Parser_next_token(parser);
 	if(!token.type) {
+#if DEBUG
 		loc_error(token.location, "expected '");
+#endif
 		va_list val;
-		va_start(val, lexer);
-		printf("%s", Token_Type_to_string(va_arg(val, Token_Type)));
+		va_start(val, parser);
+		DEBUG_FPRINTF(stderr, "%s", Token_Type_to_string(va_arg(val, Token_Type)));
 		Token_Type t = va_arg(val, Token_Type);
 		while(t) {
-			printf(" or %s", Token_Type_to_string(t));
+			DEBUG_FPRINTF(stderr, " or %s", Token_Type_to_string(t));
 			t = va_arg(val, Token_Type);
 		}
 		va_end(val);
-		fprintf(stderr, "' but file ended\n");
+		DEBUG_FPRINTF(stderr, "' but file ended\n");
 	}
 
 	{
 		va_list val;
 		Token_Type t;
+		va_start(val, parser);
 		do {
 			t = va_arg(val, Token_Type);
 			if(t == token.type) return token;
@@ -623,31 +756,77 @@ Token Lexer_expect_token(Lexer *lexer, ...) {
 	{
 		loc_error(token.location, "expected '");
 		va_list val;
-		va_start(val, lexer);
-		printf("%s", Token_Type_to_string(va_arg(val, Token_Type)));
+		va_start(val, parser);
+		DEBUG_FPRINTF(stderr, "%s", Token_Type_to_string(va_arg(val, Token_Type)));
 		Token_Type t = va_arg(val, Token_Type);
 		while(t) {
-			printf(" or %s", Token_Type_to_string(t));
+			DEBUG_FPRINTF(stderr, " or %s", Token_Type_to_string(t));
 			t = va_arg(val, Token_Type);
 		}
 		va_end(val);
-		fprintf(stderr, "' but got '%s'\n", Token_Type_to_string(token.type));
+		DEBUG_FPRINTF(stderr, "' but got '%s'\n", Token_Type_to_string(token.type));
 
 		return (Token) { 0 };
 	}
 }
 
-// AST
+#define Parser_expect_token(parser, ...) __IMPL__Parser_expect_token(parser, __VA_ARGS__, 0)
+
+bool Parser_next_function(Parser *parser, CX_AST_Node *node) {
+
+	Token data_type = Parser_expect_token(parser, TOKEN_NAME);
+	if(!data_type.type) return false;
+	node->u_function.data_type = data_type.value_sv;
 
 
+	Token name = Parser_expect_token(parser, TOKEN_NAME);
+	if(!name.type) return false;
+	node->u_function.name = name.value_sv;
+
+
+	Token op = Parser_expect_token(parser, TOKEN_OPEN_PARENTHESIS);
+	if(!op.type) return false;
+
+
+	Token cp = Parser_expect_token(parser, TOKEN_CLOSE_PARENTHESIS);
+	if(!cp.type) return false;
+
+
+	Token oc = Parser_expect_token(parser, TOKEN_OPEN_CURLY);
+	if(!oc.type) return false;
+
+	node->u_function.body = NULL; // TODO: parse function body
+
+
+	Token cc = Parser_expect_token(parser, TOKEN_CLOSE_CURLY);
+	if(!cc.type) return false;
+
+
+	node->type = CX_AST_NODE_TYPE_FUNCTION;
+	return true;
+}
+
+void Parser_next_node(Parser *parser, CX_AST_Node *node) {
+	node->type = 0;
+	size_t saved_cur = parser->cur;
+	
+	{ // function
+		if(Parser_next_function(parser, node)) return;
+		parser->cur = saved_cur;
+	}
+}
 
 //
 
-void usage(char *program_name) {
-	printf("Usage: %s [options] <file.cx>\n", program_name);
-	printf("Options:\n");
-	printf("    -h    Print this message\n");
+bool streq(char *a, char *b) {
+	return strcmp(a, b) == 0;
+}
 
+void usage(char *program_name, FILE *sink) {
+	fprintf(sink, "Usage: %s [options] <file.cx>\n", program_name);
+	fprintf(sink, "Options:\n");
+	fprintf(sink, "    -h, --help Print this message\n");
+	fprintf(sink, "    --dump-ast Print this message\n");
 }
 
 void alloc_file_content(DARRAY(char) *array, char *filename, const char *mode) {
@@ -674,16 +853,19 @@ void alloc_file_content(DARRAY(char) *array, char *filename, const char *mode) {
 int main(int argc, char **argv) {
 	char *program_name = consume_arg(&argc, &argv);
 	char *source_filename = NULL;
+	bool dump_ast = false;
 
 	while (argc) {
 		char *flag = consume_arg(&argc, &argv);
-		if (strcmp(flag, "-h") == 0) {
-			usage(program_name);
+		if (streq(flag, "-h") || streq(flag, "--help")) {
+			usage(program_name, stderr);
 			exit(0);
+		} else if (streq(flag, "--dump-ast")) {
+			dump_ast = true;
 		} else {
 			if(source_filename) {
 				error("At the moment CX does not support compiling multiple files at once\n");
-				usage(program_name);
+				usage(program_name, stderr);
 				exit(1);
 			} else {
 				source_filename = flag;
@@ -693,7 +875,7 @@ int main(int argc, char **argv) {
 
 	if(!source_filename) {
 		error("no input file provided\n");
-		usage(program_name);
+		usage(program_name, stderr);
 		exit(1);
 	}
 
@@ -725,9 +907,27 @@ int main(int argc, char **argv) {
 
 	{
 
-		for(int i = 0; i < tokens.len; ++i) {
-			Token_print(tokens.data[i]);
-		}
+		Parser parser = {
+			.tokens = &tokens,
+			.cur = 0
+		};
+
+		CX_AST_Node root;
+		CX_AST_Node_root(&root);
+
+		do {
+			CX_AST_Node node;
+			Parser_next_node(&parser, &node);
+			if(node.type) {
+				DARRAY_PUSH(CX_AST_Node)((DARRAY(CX_AST_Node)*) &root.u_root, node);
+			} else {
+				break;
+			}
+		} while(true);
+
+		if(dump_ast) CX_AST_Node_print_json(&root, stdout);
+
+		CX_AST_Node_free(root);
 
 	}
 
