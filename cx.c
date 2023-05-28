@@ -51,6 +51,40 @@ char *consume_arg(int *argc, char ***argv)
 	return result;
 }
 
+// darray
+
+#define DARRAY(T) darray_##T
+#define DARRAY_INIT(T) darray_init_##T
+#define DARRAY_PUSH(T) darray_push_##T
+#define DARRAY_FREE(T) darray_free_##T
+#define DECLARE_DARRAY(T)										\
+																\
+typedef struct {												\
+	T *data;													\
+	size_t len;													\
+	size_t _allocated;											\
+} DARRAY(T);													\
+																\
+void DARRAY_INIT(T)(DARRAY(T) *da, size_t n) {					\
+	da->data = malloc(n * sizeof(T));							\
+	da->len = 0;												\
+	da->_allocated = n;											\
+}																\
+																\
+void DARRAY_PUSH(T)(DARRAY(T) *da, T t) {						\
+	if (da->len == da->_allocated) {							\
+	  da->_allocated *= 2;										\
+	  da->data = realloc(da->data, da->_allocated * sizeof(T));	\
+	}															\
+	da->data[da->len++] = t;									\
+}																\
+																\
+void DARRAY_FREE(T)(DARRAY(T) *da) {							\
+	free(da->data);												\
+	da->data = NULL;											\
+	da->len = da->_allocated = 0;								\
+}
+
 // StringView
 
 typedef struct {
@@ -76,6 +110,16 @@ void loc_error(Location location, char *format, ...) {
 	va_start(val, format);
 	vfprintf(stderr, format, val);
 	va_end(val);
+}
+
+void loc_panic(Location location, char *format, ...) {
+	Location_print(location, stderr);
+	fprintf(stderr, ": ERROR: ");
+	va_list val;
+	va_start(val, format);
+	vfprintf(stderr, format, val);
+	va_end(val);
+	exit(1);
 }
 
 // Token
@@ -126,85 +170,85 @@ typedef enum {
 const char* Token_Type_to_string(Token_Type type) {
 	switch(type) {
 		case TOKEN_NULL:
-			return "TOKEN_NULL";
+			return "NULL_TOKEN";
 		case TOKEN_NAME:
-			return "TOKEN_NAME";
+			return "NAME";
 		case TOKEN_OPEN_PARENTHESIS:
-			return "TOKEN_OPEN_PARENTHESIS";
+			return "OPEN_PARENTHESIS";
 		case TOKEN_OPEN_CURLY:
-			return "TOKEN_OPEN_CURLY";
+			return "OPEN_CURLY";
 		case TOKEN_CLOSE_PARENTHESIS:
-			return "TOKEN_CLOSE_PARENTHESIS";
+			return "CLOSE_PARENTHESIS";
 		case TOKEN_CLOSE_CURLY:
-			return "TOKEN_CLOSE_CURLY";
+			return "CLOSE_CURLY";
 		case TOKEN_OPEN_SQUARE:
-			return "TOKEN_OPEN_SQUARE";
+			return "OPEN_SQUARE";
 		case TOKEN_CLOSE_SQUARE:
-			return "TOKEN_CLOSE_SQUARE";
+			return "CLOSE_SQUARE";
 		case TOKEN_DOT:
-			return "TOKEN_DOT";
+			return "DOT";
 		case TOKEN_COMMA:
-			return "TOKEN_COMMA";
+			return "COMMA";
 		case TOKEN_SEMICOLON:
-			return "TOKEN_SEMICOLON";
+			return "SEMICOLON";
 		case TOKEN_EQUALS:
-			return "TOKEN_EQUALS";
+			return "EQUALS";
 		case TOKEN_NUMBER:
-			return "TOKEN_NUMBER";
+			return "NUMBER";
 		case TOKEN_STRING:
-			return "TOKEN_STRING";
+			return "STRING";
 		case TOKEN_PLUS:
-			return "TOKEN_PLUS";
+			return "PLUS";
 		case TOKEN_PLUS_EQUALS:
-			return "TOKEN_PLUS_EQUALS";
+			return "PLUS_EQUALS";
 		case TOKEN_PLUS_PLUS:
-			return "TOKEN_PLUS_PLUS";
+			return "PLUS_PLUS";
 		case TOKEN_MINUS:
-			return "TOKEN_MINUS";
+			return "MINUS";
 		case TOKEN_MINUS_EQUALS:
-			return "TOKEN_MINUS_EQUALS";
+			return "MINUS_EQUALS";
 		case TOKEN_MINUS_MINUS:
-			return "TOKEN_MINUS_MINUS";
+			return "MINUS_MINUS";
 		case TOKEN_ASTERISK:
-			return "TOKEN_ASTERISK";
+			return "ASTERISK";
 		case TOKEN_TIMES_EQUALS:
-			return "TOKEN_TIMES_EQUALS";
+			return "TIMES_EQUALS";
 		case TOKEN_SLASH:
-			return "TOKEN_SLASH";
+			return "SLASH";
 		case TOKEN_DIVIDE_EQUALS:
-			return "TOKEN_DIVIDE_EQUALS";
+			return "DIVIDE_EQUALS";
 		case TOKEN_LESS_THAN:
-			return "TOKEN_LESS_THAN";
+			return "LESS_THAN";
 		case TOKEN_GREATER_THAN:
-			return "TOKEN_GREATER_THAN";
+			return "GREATER_THAN";
 		case TOKEN_NOT:
-			return "TOKEN_NOT";
+			return "NOT";
 		case TOKEN_ARROW:
-			return "TOKEN_ARROW";
+			return "ARROW";
 		case TOKEN_CHAR:
-			return "TOKEN_CHAR";
+			return "CHAR";
 		case TOKEN_AMPERSTAND:
-			return "TOKEN_AMPERSTAND";
+			return "AMPERSTAND";
 		case TOKEN_AND_EQUALS:
-			return "TOKEN_AND_EQUALS";
+			return "AND_EQUALS";
 		case TOKEN_LOGIC_AND:
-			return "TOKEN_LOGIC_AND";
+			return "LOGIC_AND";
 		case TOKEN_PIPE:
-			return "TOKEN_PIPE";
+			return "PIPE";
 		case TOKEN_OR_EQUALS:
-			return "TOKEN_OR_EQUALS";
+			return "OR_EQUALS";
 		case TOKEN_LOGIC_OR:
-			return "TOKEN_LOGIC_OR";
+			return "LOGIC_OR";
 		case TOKEN_XOR:
-			return "TOKEN_XOR";
+			return "XOR";
 		case TOKEN_XOR_EQUALS:
-			return "TOKEN_XOR_EQUALS";
+			return "XOR_EQUALS";
 		case TOKEN_MOD:
-			return "TOKEN_MOD";
+			return "MOD";
 		case TOKEN_MOD_EQUALS:
-			return "TOKEN_MOD_EQUALS";
+			return "MOD_EQUALS";
 		case TOKEN_COLON:
-			return "TOKEN_COLON";
+			return "COLON";
 	}
 	assert(false && "unreachable");
 	return NULL;
@@ -252,7 +296,7 @@ void Token_print(Token token) {
 		case TOKEN_GREATER_THAN:
 		case TOKEN_NOT:
 		case TOKEN_COLON:
-			printf("'%c'\n", token.value_char);
+			printf("\b\n");
 			break;
 		case TOKEN_PLUS:
 		case TOKEN_MINUS:
@@ -262,7 +306,7 @@ void Token_print(Token token) {
 		case TOKEN_PIPE:
 		case TOKEN_XOR:
 		case TOKEN_MOD:
-			printf("'%.1s'\n", token.value_sv.data);
+			printf("\b\n");
 			break;
 		case TOKEN_PLUS_EQUALS:
 		case TOKEN_PLUS_PLUS:
@@ -277,10 +321,12 @@ void Token_print(Token token) {
 		case TOKEN_MOD_EQUALS:
 		case TOKEN_LOGIC_AND:
 		case TOKEN_LOGIC_OR:
-			printf("'%.2s'\n", token.value_sv.data);
+			printf("\b\n");
 			break;
 	}
 }
+
+DECLARE_DARRAY(Token)
 
 // Lexer
 
@@ -336,7 +382,7 @@ Token Lexer_next_token(Lexer* lexer) {
 	Lexer_trim(lexer);
 	while(Lexer_is_not_empty(lexer)) {
 		char *s = lexer->source + lexer->cur;
-		if(!(s[0] == '#' || (s[0] == '/' && s[1] == '/'))) break;
+		if(!(s[0] == '/' && s[1] == '/')) break;
 		Lexer_drop(lexer);
 		Lexer_trim(lexer);
 	}
@@ -369,7 +415,7 @@ Token Lexer_next_token(Lexer* lexer) {
 	literal_tokens['}'] = TOKEN_CLOSE_CURLY;
 	literal_tokens['['] = TOKEN_OPEN_SQUARE;
 	literal_tokens[']'] = TOKEN_CLOSE_SQUARE;
-	literal_tokens['.'] = TOKEN_COMMA;
+	literal_tokens['.'] = TOKEN_DOT;
 	literal_tokens[','] = TOKEN_COMMA;
 	literal_tokens[';'] = TOKEN_SEMICOLON;
 	literal_tokens[':'] = TOKEN_COLON;
@@ -543,7 +589,7 @@ Token Lexer_next_token(Lexer* lexer) {
 
 	not_operand:
 
-	loc_error(location, "unknown token starts with '%c'\n", first);
+	loc_panic(location, "unknown token starts with '%c' = 0x%x = %d\n", first, first, first);
 	return (Token) { 0 };
 }
 
@@ -592,33 +638,7 @@ Token Lexer_expect_token(Lexer *lexer, ...) {
 
 // AST
 
-typedef struct {
 
-} CX_Expression;
-
-typedef struct {
-	CX_Expression *expressions;
-	size_t expression_sz;
-} CX_Program;
-
-// Parser
-
-// typedef struct {
-// 	Lexer *lexer;
-// } Parser;
-
-// CX_Expression Parser_parse_expression(Parser *parser) {
-
-// }
-
-// CX_Program Parser_parse_program(Parser *parser) {
-// 	CX_Program program = (CX_Program) { 0 };
-
-// 	while(Lexer_is_not_empty(parser->lexer)) {
-// 		CX_Expression expression = Parser_parse_expression(parser);
-
-// 	}
-// }
 
 //
 
@@ -655,47 +675,65 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 
-	FILE *fp = fopen(source_filename, "r");
-
-	char *source_code;
-	long source_len;
-
-	if(fp) {
-		fseek(fp, 0, SEEK_END);
-		source_len = ftell(fp);
-		fseek(fp, 0, SEEK_SET);
-		source_code = malloc(source_len);
-		if(source_code) {
-			source_len = fread(source_code, 1, source_len, fp);
-			if(errno) {
-				fclose(fp);
-				free(source_code);
-				panic("error reading file %s: %s\n", source_filename, strerror(errno));
-			}
-		} else {
-			fclose(fp);
-			panic("could not allocate %db of memory", source_len);
-		}
-		fclose(fp);
-	} else {
-		panic("could not open file: %s\n", source_filename);
-	}
-
 	info("Lexical analysis\n");
 
-	Lexer lexer = {
-		.file_path = source_filename,
-		.source = source_code,
-		.source_len = source_len
-	};
+	char *source_code;
+
+	DARRAY(Token) tokens;
+	DARRAY_INIT(Token)(&tokens, 1000);
+
+	{
+
+		FILE *fp = fopen(source_filename, "r");
+
+		long source_len;
+
+		if(fp) {
+			fseek(fp, 0, SEEK_END);
+			source_len = ftell(fp);
+			fseek(fp, 0, SEEK_SET);
+			source_code = malloc(source_len);
+			if(source_code) {
+				source_len = fread(source_code, 1, source_len, fp);
+				if(errno) {
+					fclose(fp);
+					free(source_code);
+					panic("error reading file %s: %s\n", source_filename, strerror(errno));
+				}
+			} else {
+				fclose(fp);
+				panic("could not allocate %db of memory", source_len);
+			}
+			fclose(fp);
+		} else {
+			panic("could not open file: %s\n", source_filename);
+		}
+
+		Lexer lexer = {
+			.file_path = source_filename,
+			.source = source_code,
+			.source_len = source_len
+		};
+
+		while(Lexer_is_not_empty(&lexer)) {
+			Token token = Lexer_next_token(&lexer);
+			// Token_print(token);
+			DARRAY_PUSH(Token)(&tokens, token);
+		}
+
+	}
 
 	info("Parsing\n");
 
-	printf("%d\n", Lexer_expect_token(&lexer, TOKEN_STRING, TOKEN_COMMA, 0).type);
+	{
 
-	// Parser parser = {
+		for(int i = 0; i < tokens.len; ++i) {
+			Token_print(tokens.data[i]);
+		}
 
-	// }
+	}
+
+	DARRAY_FREE(Token)(&tokens);
 
 	info("Semantic analysis\n");
 
