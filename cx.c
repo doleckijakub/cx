@@ -829,18 +829,16 @@ typedef struct {
 	bool eof;
 } Parser;
 
-// Token Parser_peek_token(Parser *parser) {
-// 	if(parser->cur < parser->tokens->len) {
-// 		return parser->tokens->data[parser->cur];
-// 	} else {
-// 		return (Token) { 0 };
-// 	}
-// }
+Token Parser_peek_token(Parser *parser) {
+	if(parser->cur < parser->tokens->len) {
+		return parser->tokens->data[parser->cur];
+	} else {
+		return (Token) { 0 };
+	}
+}
 
 Token Parser_next_token(Parser *parser) {
 	Token t = (parser->cur < parser->tokens->len) ? parser->tokens->data[parser->cur++] : (Token) { 0 };
-	// DEBUG_TRACE("cx.c:%d: Parser_next_token = ", n);
-	// Token_print(t);
 	if(t.type == TOKEN_EOF) parser->eof = true;
 	return t;
 }
@@ -937,11 +935,11 @@ Parser_next_return_stmt_cleanup:
 
 // TODO: forward declare Parser_next_compound_stmt and allow u_compound_stmt as a Parser_next_stmt
 
-// bool Parser_next_stmt(Parser *parser, CX_AST_Node *parent, CX_AST_Node *stmt) {
-// 	if(Parser_next_return_stmt(parser, parent, stmt)) return true;
+bool Parser_next_stmt(Parser *parser, CX_AST_Node *parent, CX_AST_Node *stmt) {
+	if(Parser_next_return_stmt(parser, parent, stmt)) return true;
 
-// 	return false;
-// }
+	return false;
+}
 
 bool Parser_next_compound_stmt(Parser *parser, CX_AST_Node *parent, CX_AST_Node *out) {
 	size_t saved_cur = parser->cur;
@@ -951,13 +949,15 @@ bool Parser_next_compound_stmt(Parser *parser, CX_AST_Node *parent, CX_AST_Node 
 	Token oc = Parser_next_token(parser);
 	if(oc.type != TOKEN_OPEN_CURLY) goto Parser_next_compound_stmt_cleanup;
 
-	// TODO: loop
-
 	CX_AST_Node stmt;
-	if(!Parser_next_return_stmt(parser, out, &stmt)) goto Parser_next_compound_stmt_cleanup;
+	
+Parser_next_compound_stmt_more:
+
+	if(!Parser_next_stmt(parser, out, &stmt)) goto Parser_next_compound_stmt_cleanup;
 	DARRAY_PUSH(CX_AST_Node)((DARRAY(CX_AST_Node)*) &out->u_compound_stmt, stmt);
 
-	// TODO: peek comma
+	Token peeked_token = Parser_peek_token(parser);
+	if(peeked_token.type != TOKEN_CLOSE_CURLY) goto Parser_next_compound_stmt_more;
 
 	Token cc = Parser_next_token(parser);
 	if(cc.type != TOKEN_CLOSE_CURLY) goto Parser_next_compound_stmt_cleanup;
