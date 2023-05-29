@@ -933,10 +933,11 @@ Parser_next_return_stmt_cleanup:
 	return false;
 }
 
-// TODO: forward declare Parser_next_compound_stmt and allow u_compound_stmt as a Parser_next_stmt
+bool Parser_next_compound_stmt(Parser*, CX_AST_Node*, CX_AST_Node*); // Forward declaration
 
 bool Parser_next_stmt(Parser *parser, CX_AST_Node *parent, CX_AST_Node *stmt) {
 	if(Parser_next_return_stmt(parser, parent, stmt)) return true;
+	if(Parser_next_compound_stmt(parser, parent, stmt)) return true;
 
 	return false;
 }
@@ -950,7 +951,7 @@ bool Parser_next_compound_stmt(Parser *parser, CX_AST_Node *parent, CX_AST_Node 
 	if(oc.type != TOKEN_OPEN_CURLY) goto Parser_next_compound_stmt_cleanup;
 
 	CX_AST_Node stmt;
-	
+
 Parser_next_compound_stmt_more:
 
 	if(!Parser_next_stmt(parser, out, &stmt)) goto Parser_next_compound_stmt_cleanup;

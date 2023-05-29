@@ -1,4 +1,6 @@
 i32 main() {
 	return 69;
-	return 420;
+	{
+		return 420;
+	}
 }
