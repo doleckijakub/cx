@@ -1191,7 +1191,7 @@ void analyse_semantics(CX_AST_Node *ast, SemanticStructure *semantic_structure) 
 			break;
 		case CX_AST_NODE_TYPE_TYPE_ID:
 			if(!HashMap_at(semantic_structure->data_type_translations, ast->u_type_id.value.value_sv))
-				loc_error(ast->u_type_id.value.location, " %d unknown data type: " PRIsv "\n", __LINE__, PRIsv_arg(ast->u_type_id.value.value_sv));
+				loc_error(ast->u_type_id.value.location, " unknown data type: " PRIsv "\n", PRIsv_arg(ast->u_type_id.value.value_sv));
 			break;
 		case CX_AST_NODE_TYPE_NAME_ID:
 			// TODO: check validness and redeclaration
