@@ -1,6 +1,6 @@
 # CX - C Extended
 
-[![CI](https://github.com/doleckijakub/cx/actions/workflows/build.yml/badge.svg)]
+![CI](https://github.com/doleckijakub/cx/actions/workflows/build.yml/badge.svg)
 
 ## Introducing CX
 
