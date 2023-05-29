@@ -4,11 +4,12 @@ I've made CX, because C does not allow many features out of the box or is scarse
 
 ## Quick start
 
-As for now the only possible output of the code is the AST, it can be seen usign the `--dump-ast` flag like so
+Below is an example of how a `test.cx` file can be translated to `test.c` and then compiled with gcc.
 
 ```console
-$ gcc -o cx cx.c
-$ ./cx test.cx --dump-ast | jq
+$ make
+$ ./cx test.cx -o test.c
+$ gcc test.c -o test
 ```
 
 ## Implemented features

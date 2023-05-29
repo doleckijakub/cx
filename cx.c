@@ -9,7 +9,7 @@
 
 // debug
 
-#define DEBUG 1
+#define DEBUG 0
 
 #if DEBUG
 #	define DEBUG_TRACE(...) fprintf(stderr, "[TRACE]: " __VA_ARGS__)
@@ -22,7 +22,7 @@
 void info(char *format, ...) {
 	va_list val;
 	va_start(val, format);
-	fprintf(stderr, "INFO: ");
+	fprintf(stderr, "info: ");
 	vfprintf(stderr, format, val);
 	va_end(val);
 }
@@ -38,7 +38,7 @@ void info(char *format, ...) {
 void error(char *format, ...) {
 	va_list val;
 	va_start(val, format);
-	fprintf(stderr, "ERROR: ");
+	fprintf(stderr, "error: ");
 	vfprintf(stderr, format, val);
 	va_end(val);
 }
@@ -46,7 +46,7 @@ void error(char *format, ...) {
 void panic(char *format, ...) {
 	va_list val;
 	va_start(val, format);
-	fprintf(stderr, "FATAL ERROR: ");
+	fprintf(stderr, "fatal error: ");
 	vfprintf(stderr, format, val);
 	va_end(val);
 	exit(1);
@@ -183,7 +183,7 @@ extern DARRAY(char) source_code;
 void loc_error(Location location, char *format, ...) {
 	va_list val;
 	va_start(val, format);
-	fprintf(stderr, PRIloc ": ERROR: ", PRIloc_arg(location));
+	fprintf(stderr, PRIloc ": error: ", PRIloc_arg(location));
 	vfprintf(stderr, format, val);
 	va_end(val);
 }
@@ -198,7 +198,7 @@ void loc_error_cite(Location location) {
 		}
 	}
 	for(size_t i = 0; i < location.row; ++i) ++cur;
-	fprintf(stderr, PRIloc ": ERROR: `", PRIloc_arg(location));
+	fprintf(stderr, PRIloc ": error: `", PRIloc_arg(location));
 	while(source_code.data[cur] != '\n') putc(source_code.data[cur++], stderr);
 	fprintf(stderr, "`\n");
 }
@@ -206,7 +206,7 @@ void loc_error_cite(Location location) {
 void loc_panic(Location location, char *format, ...) {
 	va_list val;
 	va_start(val, format);
-	fprintf(stderr, PRIloc ": FATAL ERROR: ", PRIloc_arg(location));
+	fprintf(stderr, PRIloc ": fatal error: ", PRIloc_arg(location));
 	vfprintf(stderr, format, val);
 	va_end(val);
 	exit(1);
@@ -1190,8 +1190,12 @@ void analyse_semantics(CX_AST_Node *ast, SemanticStructure *semantic_structure) 
 				analyse_semantics(&ast->u_root.data[i], semantic_structure);
 			break;
 		case CX_AST_NODE_TYPE_TYPE_ID:
-			if(!HashMap_at(semantic_structure->data_type_translations, ast->u_type_id.value.value_sv))
-				loc_error(ast->u_type_id.value.location, " unknown data type: " PRIsv "\n", PRIsv_arg(ast->u_type_id.value.value_sv));
+			{
+				StringView *type_translation = HashMap_at(semantic_structure->data_type_translations, ast->u_type_id.value.value_sv);
+				if(!type_translation)
+					loc_error(ast->u_type_id.value.location, " unknown data type: " PRIsv "\n", PRIsv_arg(ast->u_type_id.value.value_sv));
+				ast->u_type_id.value.value_sv = *type_translation;
+			}
 			break;
 		case CX_AST_NODE_TYPE_NAME_ID:
 			// TODO: check validness and redeclaration
@@ -1210,6 +1214,8 @@ void analyse_semantics(CX_AST_Node *ast, SemanticStructure *semantic_structure) 
 				analyse_semantics(&ast->u_compound_stmt.data[i], semantic_structure);
 			break;
 		case CX_AST_NODE_TYPE_FUNCTION_DECL:
+			analyse_semantics(ast->u_function_decl.data_type, semantic_structure);
+			analyse_semantics(ast->u_function_decl.name, semantic_structure);
 			analyse_semantics(ast->u_function_decl.body, semantic_structure);
 			break;
 	}
@@ -1282,8 +1288,9 @@ bool streq(char *a, char *b) {
 void usage(char *program_name, FILE *sink) {
 	fprintf(sink, "Usage: %s [options] <file.cx>\n", program_name);
 	fprintf(sink, "Options:\n");
-	fprintf(sink, "    -h, --help Print this message\n");
-	fprintf(sink, "    --dump-ast Print this message\n");
+	fprintf(sink, "    -o <file.c>   Place the output into <file.c>\n");
+	fprintf(sink, "    -h, --help    Print this message\n");
+	fprintf(sink, "    --dump-ast    Display the program's syntax tree to stderr\n");
 }
 
 void alloc_file_content(DARRAY(char) *array, char *filename, const char *mode) {
@@ -1310,12 +1317,14 @@ void alloc_file_content(DARRAY(char) *array, char *filename, const char *mode) {
 
 char *program_name = NULL;
 char *source_filename = NULL;
+char *output_filename = NULL;
 bool dump_ast = false;
 
 DARRAY(char) source_code;
 DARRAY(Token) tokens;
 CX_AST_Node root;
 HashMap data_type_translations;
+FILE *output_fp = NULL;
 
 int main(int argc, char **argv) {
 	program_name = consume_arg(&argc, &argv);
@@ -1325,6 +1334,21 @@ int main(int argc, char **argv) {
 		if (streq(flag, "-h") || streq(flag, "--help")) {
 			usage(program_name, stderr);
 			exit(0);
+		} else if (streq(flag, "-o")) {
+			if(argc) {
+				char *flag_2 = consume_arg(&argc, &argv);
+				if(output_filename) {
+					error("output filename already supplied before '%s'\n", output_filename);
+					usage(program_name, stderr);
+					exit(1);
+				} else {
+					output_filename = flag_2;
+				}
+			} else {
+				error("missing output filename after '%s'\n", flag);
+				usage(program_name, stderr);
+				exit(1);
+			}
 		} else if (streq(flag, "--dump-ast")) {
 			dump_ast = true;
 		} else {
@@ -1340,6 +1364,12 @@ int main(int argc, char **argv) {
 
 	if(!source_filename) {
 		error("no input file provided\n");
+		usage(program_name, stderr);
+		exit(1);
+	}
+
+	if(!output_filename) {
+		error("no output filename provided\n");
 		usage(program_name, stderr);
 		exit(1);
 	}
@@ -1398,7 +1428,6 @@ int main(int argc, char **argv) {
 		if(dump_ast) {
 			CX_AST_Node_print_json(&root, stdout);
 			putc('\n', stdout);
-			goto main_cleanup;
 		}
 
 	}
@@ -1435,11 +1464,21 @@ int main(int argc, char **argv) {
 			.data_type_translations = &data_type_translations
 		};
 
-		generate_code(&code_gen, &root, stdout);
+		output_fp = fopen(output_filename, "w");
+
+		if(!output_fp) {
+			error("writing to file '%s' failed: %s\n", output_filename, strerror(errno));
+			goto main_cleanup;
+		}
+
+		generate_code(&code_gen, &root, output_fp);
+
+		fclose(output_fp);
 	}
 
 main_cleanup:
 
+	if(output_fp) fclose(output_fp);
 	HashMap_free(&data_type_translations);
 	CX_AST_Node_free(root);
 	DARRAY_FREE(Token)(&tokens);
