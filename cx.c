@@ -9,7 +9,7 @@
 
 // debug
 
-#define DEBUG 1
+#define DEBUG 0
 
 #if DEBUG
 #	define DEBUG_TRACE(...) fprintf(stderr, "[TRACE]: " __VA_ARGS__)
@@ -117,12 +117,16 @@ StringView sv_from_cstr(const char *str) {
 	return s;
 }
 
-bool sveq(StringView *a, StringView *b) {
+bool sveqp(StringView *a, StringView *b) {
 	if(a->size != b->size) return false;
 	for(size_t i = 0; i < a->size; ++i)
 		if(a->data[i] != b->data[i])
 			return false;
 	return true;
+}
+
+bool sveq(StringView a, StringView b) {
+	return sveqp(&a, &b);
 }
 
 // "HashMap"
@@ -141,7 +145,7 @@ void HashMap_init(HashMap *h) {
 
 StringView *HashMap_at(HashMap *h, StringView from) {
 	for(size_t i = 0; i < h->_from.len; ++i) {
-		if(sveq(&h->_from.data[i], &from)) {
+		if(sveqp(&h->_from.data[i], &from)) {
 			return &h->_to.data[i];
 		}
 	}
@@ -150,7 +154,7 @@ StringView *HashMap_at(HashMap *h, StringView from) {
 
 void HashMap_put(HashMap *h, StringView from, StringView to) {
 	for(size_t i = 0; i < h->_from.len; ++i) {
-		if(sveq(&h->_from.data[i], &from)) {
+		if(sveqp(&h->_from.data[i], &from)) {
 			h->_to.data[i] = to;
 			return;
 		}
@@ -171,13 +175,11 @@ typedef struct {
 	size_t line, row;
 } Location;
 
-void Location_print(Location location, FILE *fp) {
-	fprintf(fp, "%s:%lu:%lu", location.file_path, (unsigned long) location.line + 1, (unsigned long) location.row + 1);
-}
+#define PRIloc "%s:%lu:%lu"
+#define PRIloc_arg(loc) (loc).file_path, (unsigned long) (loc).line + 1, (unsigned long) (loc).row + 1
 
 void loc_error(Location location, char *format, ...) {
-	Location_print(location, stderr);
-	fprintf(stderr, ": ERROR: ");
+	fprintf(stderr, ": ERROR: " PRIloc, PRIloc_arg(location));
 	va_list val;
 	va_start(val, format);
 	vfprintf(stderr, format, val);
@@ -185,8 +187,7 @@ void loc_error(Location location, char *format, ...) {
 }
 
 void loc_panic(Location location, char *format, ...) {
-	Location_print(location, stderr);
-	fprintf(stderr, ": ERROR: ");
+	fprintf(stderr, ": ERROR: " PRIloc, PRIloc_arg(location));
 	va_list val;
 	va_start(val, format);
 	vfprintf(stderr, format, val);
@@ -237,6 +238,7 @@ typedef enum {
 	TOKEN_MOD,
 	TOKEN_MOD_EQUALS,
 	TOKEN_COLON,
+	TOKEN_EOF,
 } Token_Type;
 
 const char* Token_Type_to_string(Token_Type type) {
@@ -321,6 +323,8 @@ const char* Token_Type_to_string(Token_Type type) {
 			return "MOD_EQUALS";
 		case TOKEN_COLON:
 			return "COLON";
+		case TOKEN_EOF:
+			return "EOF";
 	}
 	assert(false && "unreachable");
 	return NULL;
@@ -340,22 +344,22 @@ FORWARD_DECLARE_DARRAY(Token)
 DECLARE_DARRAY(Token)
 
 void Token_print(Token token) {
-	if(!token.type) return;
-	Location_print(token.location, stderr);
-	fprintf(stderr, ": %s ", Token_Type_to_string(token.type));
+	fprintf(stderr, PRIloc ": %s", PRIloc_arg(token.location), Token_Type_to_string(token.type));
 	switch(token.type) {
-		case TOKEN_NULL: assert(false && "unreachable"); break;
+		case TOKEN_NULL:
+			printf(" \n");
+			break;
 		case TOKEN_NAME:
-			printf("'" PRIsv "'\n", PRIsv_arg(token.value_sv));
+			printf(" '" PRIsv "'\n", PRIsv_arg(token.value_sv));
 			break;
 		case TOKEN_NUMBER:
-			printf("%d\n", token.value_int);
+			printf(" %d\n", token.value_int);
 			break;
 		case TOKEN_CHAR:
-			printf("'" PRIsv "'\n", PRIsv_arg(token.value_sv));
+			printf(" '" PRIsv "'\n", PRIsv_arg(token.value_sv));
 			break;
 		case TOKEN_STRING:
-			printf("\"" PRIsv "\"\n", PRIsv_arg(token.value_sv));
+			printf(" \"" PRIsv "\"\n", PRIsv_arg(token.value_sv));
 			break;
 		case TOKEN_OPEN_PARENTHESIS:
 		case TOKEN_OPEN_CURLY:
@@ -371,8 +375,6 @@ void Token_print(Token token) {
 		case TOKEN_GREATER_THAN:
 		case TOKEN_NOT:
 		case TOKEN_COLON:
-			printf("\b\n");
-			break;
 		case TOKEN_PLUS:
 		case TOKEN_MINUS:
 		case TOKEN_ASTERISK:
@@ -381,8 +383,6 @@ void Token_print(Token token) {
 		case TOKEN_PIPE:
 		case TOKEN_XOR:
 		case TOKEN_MOD:
-			printf("\b\n");
-			break;
 		case TOKEN_PLUS_EQUALS:
 		case TOKEN_PLUS_PLUS:
 		case TOKEN_MINUS_EQUALS:
@@ -396,7 +396,8 @@ void Token_print(Token token) {
 		case TOKEN_MOD_EQUALS:
 		case TOKEN_LOGIC_AND:
 		case TOKEN_LOGIC_OR:
-			printf("\b\n");
+		case TOKEN_EOF:
+			printf("\n");
 			break;
 	}
 }
@@ -408,6 +409,7 @@ typedef struct {
 	char *source;
 	size_t source_len;
 	size_t cur, bol, row;
+	bool eof;
 } Lexer;
 
 Location Lexer_location(Lexer* lexer) {
@@ -671,11 +673,13 @@ Token Lexer_next_token(Lexer* lexer) {
 typedef enum {
 	CX_AST_NODE_TYPE_NULL,
 	CX_AST_NODE_TYPE_ROOT,
-	// CX_AST_NODE_TYPE_NUMBER, // value:NUMBER
+	CX_AST_NODE_TYPE_FUNCTION_DECL,
+	CX_AST_NODE_TYPE_NUMBER_LIT,
+	CX_AST_NODE_TYPE_RETURN_STMT,
+	CX_AST_NODE_TYPE_COMPOUND_STMT,
 	// CX_AST_NODE_TYPE_STRING, // value:STRING
 	// CX_AST_NODE_TYPE_DATA_TYPE, // name:NAME
 	// CX_AST_NODE_TYPE_VARIABLE, // name:NAME
-	CX_AST_NODE_TYPE_FUNCTION, // name:NAME, types:[NAME], names:[NAME], body:AST
 	// CX_AST_NODE_TYPE_FUNCALL, // func:AST, args:[AST]
 } CX_AST_Node_Type;
 
@@ -692,23 +696,60 @@ struct CX_AST_Node {
 			size_t len;
 			size_t _allocated;
 		} u_root;
-		// struct {
-		// 	Token value;
-		// } u_number;
-		// struct {
-		// 	Token name;
-		// } u_data_type;
+		struct {
+			CX_AST_Node *data;
+			size_t len;
+			size_t _allocated;
+		} u_compound_stmt;
+		struct {
+			Token value;
+		} u_number_lit;
+		struct {
+			CX_AST_Node *expr;
+		} u_return_stmt;
 		struct {
 			Token data_type;
 			Token name;
 			// TODO: types
 			// TODO: names
 			CX_AST_Node *body;
-		} u_function;
+		} u_function_decl;
 	};
 };
 
 DECLARE_DARRAY(CX_AST_Node)
+
+void CX_AST_Node_root(CX_AST_Node *root) {
+	root->type = CX_AST_NODE_TYPE_ROOT;
+	root->parent = NULL;
+	DARRAY_INIT(CX_AST_Node)((DARRAY(CX_AST_Node)*) &root->u_root, 1);
+}
+
+void CX_AST_Node_number_lit(CX_AST_Node *parent, CX_AST_Node *new) {
+	new->type = CX_AST_NODE_TYPE_NUMBER_LIT;
+	new->parent = parent;
+	new->u_number_lit.value = (Token) { 0 };
+}
+
+void CX_AST_Node_return_stmt(CX_AST_Node *parent, CX_AST_Node *new) {
+	new->type = CX_AST_NODE_TYPE_RETURN_STMT;
+	new->parent = parent;
+	new->u_return_stmt.expr = (CX_AST_Node*) malloc(sizeof(CX_AST_Node));
+}
+
+void CX_AST_Node_compound_stmt(CX_AST_Node *parent, CX_AST_Node *new) {
+	new->type = CX_AST_NODE_TYPE_COMPOUND_STMT;
+	new->parent = parent;
+	DARRAY_INIT(CX_AST_Node)((DARRAY(CX_AST_Node)*) &new->u_compound_stmt, 1);
+}
+
+void CX_AST_Node_function_decl(CX_AST_Node *parent, CX_AST_Node *new) {
+	new->type = CX_AST_NODE_TYPE_FUNCTION_DECL;
+	new->parent = parent;
+	new->u_function_decl.data_type = (Token) { 0 };
+	new->u_function_decl.name = (Token) { 0 };
+	new->u_function_decl.body = (CX_AST_Node*) malloc(sizeof(CX_AST_Node));
+}
 
 void CX_AST_Node_free(CX_AST_Node node) {
 	switch(node.type) {
@@ -720,10 +761,19 @@ void CX_AST_Node_free(CX_AST_Node node) {
 				CX_AST_Node_free(node.u_root.data[i]);
 			DARRAY_FREE(CX_AST_Node)((DARRAY(CX_AST_Node)*) &node.u_root);
 			break;
-		// case CX_AST_NODE_TYPE_NUMBER:
-		// case CX_AST_NODE_TYPE_DATA_TYPE:
-		case CX_AST_NODE_TYPE_FUNCTION:
-		default:
+		case CX_AST_NODE_TYPE_NUMBER_LIT:
+			// no need to free an integer
+			break;
+		case CX_AST_NODE_TYPE_RETURN_STMT:
+			CX_AST_Node_free(*node.u_return_stmt.expr);
+			break;
+		case CX_AST_NODE_TYPE_COMPOUND_STMT:
+			for(size_t i = 0; i < node.u_compound_stmt.len; ++i)
+				CX_AST_Node_free(node.u_compound_stmt.data[i]);
+			DARRAY_FREE(CX_AST_Node)((DARRAY(CX_AST_Node)*) &node.u_compound_stmt);
+			break;
+		case CX_AST_NODE_TYPE_FUNCTION_DECL:
+			CX_AST_Node_free(*node.u_function_decl.body);
 			break;
 	}
 }
@@ -735,7 +785,7 @@ void CX_AST_Node_print_json(CX_AST_Node *node, FILE *sink) {
 			assert(false && "unreachable");
 			break;
 		case CX_AST_NODE_TYPE_ROOT:
-			fprintf(sink, "\"root\":{\"children\":[");
+			fprintf(sink, "\"u_root\":{\"children\":[");
 			if(node->u_root.len > 0)
 				CX_AST_Node_print_json(&node->u_root.data[0], sink);
 			for(size_t i = 1; i < node->u_root.len; ++i) {
@@ -744,39 +794,58 @@ void CX_AST_Node_print_json(CX_AST_Node *node, FILE *sink) {
 			}
 			fprintf(sink, "]}");
 			break;
-		case CX_AST_NODE_TYPE_FUNCTION:
-			fprintf(sink, "\"function\":{\"type\":\"" PRIsv "\",\"name\":\"" PRIsv "\",\"body\":",
-				PRIsv_arg(node->u_function.data_type.value_sv),
-				PRIsv_arg(node->u_function.name.value_sv)
-			);
-			CX_AST_Node_print_json(node->u_function.body, sink);
-			fprintf(sink, "}");
+		case CX_AST_NODE_TYPE_NUMBER_LIT:
+			fprintf(sink, "\"u_number_lit\":%d", node->u_number_lit.value.value_int);
 			break;
-		default:
-			assert(false && "unreachable");
+		case CX_AST_NODE_TYPE_RETURN_STMT:
+			fprintf(sink, "\"u_return_stmt\":");
+			CX_AST_Node_print_json(node->u_return_stmt.expr, sink);
+			break;
+		case CX_AST_NODE_TYPE_COMPOUND_STMT:
+			fprintf(sink, "\"u_compound_stmt\":{\"children\":[");
+			if(node->u_compound_stmt.len > 0)
+				CX_AST_Node_print_json(&node->u_compound_stmt.data[0], sink);
+			for(size_t i = 1; i < node->u_compound_stmt.len; ++i) {
+				fprintf(sink, ",");
+				CX_AST_Node_print_json(&node->u_compound_stmt.data[i], sink);
+			}
+			fprintf(sink, "]}");
+			break;
+		case CX_AST_NODE_TYPE_FUNCTION_DECL:
+			fprintf(sink, "\"u_function_decl\":{\"data_type\":\"" PRIsv "\",\"name\":\"" PRIsv "\",\"body\":",
+				PRIsv_arg(node->u_function_decl.data_type.value_sv),
+				PRIsv_arg(node->u_function_decl.name.value_sv)
+			);
+			CX_AST_Node_print_json(node->u_function_decl.body, sink);
+			fprintf(sink, "}");
 			break;
 	}
 	fprintf(sink, "}");
 }
 
-void CX_AST_Node_root(CX_AST_Node *root) {
-	root->type = CX_AST_NODE_TYPE_ROOT;
-    root->parent = NULL;
-	DARRAY_INIT(CX_AST_Node)((DARRAY(CX_AST_Node)*) &root->u_root, 1);
-}
-
 typedef struct {
 	DARRAY(Token) *tokens;
 	size_t cur;
+	bool eof;
 } Parser;
 
+// Token Parser_peek_token(Parser *parser) {
+// 	if(parser->cur < parser->tokens->len) {
+// 		return parser->tokens->data[parser->cur];
+// 	} else {
+// 		return (Token) { 0 };
+// 	}
+// }
+
 Token Parser_next_token(Parser *parser) {
-	if(parser->cur < parser->tokens->len) {
-		return parser->tokens->data[parser->cur++];
-	} else {
-		return (Token) { 0 };
-	}
+	Token t = (parser->cur < parser->tokens->len) ? parser->tokens->data[parser->cur++] : (Token) { 0 };
+	// DEBUG_TRACE("cx.c:%d: Parser_next_token = ", n);
+	// Token_print(t);
+	if(t.type == TOKEN_EOF) parser->eof = true;
+	return t;
 }
+
+// #define Parser_next_token(p) __IMPL__Parser_next_token(__LINE__, p)
 
 Token __IMPL__Parser_expect_token(bool necessary, Parser *parser, ...) {
 	Token token = Parser_next_token(parser);
@@ -822,43 +891,125 @@ Token __IMPL__Parser_expect_token(bool necessary, Parser *parser, ...) {
 
 #define Parser_expect_token(n, p, ...) __IMPL__Parser_expect_token(n, p, __VA_ARGS__, 0)
 
-bool Parser_next_function(Parser *parser, CX_AST_Node *node) {
-	Token data_type = Parser_expect_token(false, parser, TOKEN_NAME);
-	if(!data_type.type) return false;
-	node->u_function.data_type = data_type;
+// Parser_next_...'s
 
-	Token name = Parser_expect_token(false, parser, TOKEN_NAME);
-	if(!name.type) return false;
-	node->u_function.name = name;
+bool Parser_next_number_literal(Parser *parser, CX_AST_Node *parent, CX_AST_Node *out) {
+	size_t saved_cur = parser->cur;
 
-	Token op = Parser_expect_token(false, parser, TOKEN_OPEN_PARENTHESIS);
-	if(!op.type) return false;
+	CX_AST_Node_number_lit(parent, out);
+
+	Token number = Parser_next_token(parser);
+	if(number.type != TOKEN_NUMBER) goto Parser_next_number_literal_cleanup;
+	out->u_number_lit.value = number;	
+
+	out->type = CX_AST_NODE_TYPE_NUMBER_LIT;
+	return true;
+
+Parser_next_number_literal_cleanup:
+	parser->cur = saved_cur;
+	CX_AST_Node_free(*out);
+	return false;
+}
+
+bool Parser_next_return_stmt(Parser *parser, CX_AST_Node *parent, CX_AST_Node *out) {
+	size_t saved_cur = parser->cur;
+
+	CX_AST_Node_return_stmt(parent, out);
+
+	Token return_keyword = Parser_next_token(parser);
+	if(return_keyword.type != TOKEN_NAME) goto Parser_next_return_stmt_cleanup;
+	if(!sveq(return_keyword.value_sv, sv_from_cstr("return"))) goto Parser_next_return_stmt_cleanup;
+
+	if(!Parser_next_number_literal(parser, out, out->u_return_stmt.expr)) // TODO: Parser_next_expr
+		goto Parser_next_return_stmt_cleanup;
+
+	Token semicolon = Parser_next_token(parser);
+	if(semicolon.type != TOKEN_SEMICOLON) goto Parser_next_return_stmt_cleanup;
+
+	out->type = CX_AST_NODE_TYPE_RETURN_STMT;
+	return true;
+
+Parser_next_return_stmt_cleanup:
+	parser->cur = saved_cur;
+	CX_AST_Node_free(*out);
+	return false;
+}
+
+// TODO: forward declare Parser_next_compound_stmt and allow u_compound_stmt as a Parser_next_stmt
+
+// bool Parser_next_stmt(Parser *parser, CX_AST_Node *parent, CX_AST_Node *stmt) {
+// 	if(Parser_next_return_stmt(parser, parent, stmt)) return true;
+
+// 	return false;
+// }
+
+bool Parser_next_compound_stmt(Parser *parser, CX_AST_Node *parent, CX_AST_Node *out) {
+	size_t saved_cur = parser->cur;
+
+	CX_AST_Node_compound_stmt(parent, out);
+
+	Token oc = Parser_next_token(parser);
+	if(oc.type != TOKEN_OPEN_CURLY) goto Parser_next_compound_stmt_cleanup;
+
+	// TODO: loop
+
+	CX_AST_Node stmt;
+	if(!Parser_next_return_stmt(parser, out, &stmt)) goto Parser_next_compound_stmt_cleanup;
+	DARRAY_PUSH(CX_AST_Node)((DARRAY(CX_AST_Node)*) &out->u_compound_stmt, stmt);
+
+	// TODO: peek comma
+
+	Token cc = Parser_next_token(parser);
+	if(cc.type != TOKEN_CLOSE_CURLY) goto Parser_next_compound_stmt_cleanup;
+
+	out->type = CX_AST_NODE_TYPE_COMPOUND_STMT;
+	return true;
+
+Parser_next_compound_stmt_cleanup:
+	parser->cur = saved_cur;
+	CX_AST_Node_free(*out);
+	return false;
+}
+
+bool Parser_next_function_decl(Parser *parser, CX_AST_Node *parent, CX_AST_Node *out) {
+	size_t saved_cur = parser->cur;
+
+	CX_AST_Node_function_decl(parent, out);
+
+	Token data_type = Parser_next_token(parser);
+	if(data_type.type != TOKEN_NAME) goto Parser_next_function_decl_cleanup;
+	out->u_function_decl.data_type = data_type;
+
+	Token name = Parser_next_token(parser);
+	if(name.type != TOKEN_NAME) goto Parser_next_function_decl_cleanup;
+	out->u_function_decl.name = name;
+
+	Token op = Parser_next_token(parser);
+	if(op.type != TOKEN_OPEN_PARENTHESIS) goto Parser_next_function_decl_cleanup;
 
 	// TODO: parse parameters
 
-	Token cp = Parser_expect_token(false, parser, TOKEN_CLOSE_PARENTHESIS);
-	if(!cp.type) return false;
+	Token cp = Parser_next_token(parser);
+	if(cp.type != TOKEN_CLOSE_PARENTHESIS) goto Parser_next_function_decl_cleanup;
 
-	Token oc = Parser_expect_token(false, parser, TOKEN_OPEN_CURLY);
-	if(!oc.type) return false;
+	if(!Parser_next_compound_stmt(parser, out, out->u_function_decl.body)) goto Parser_next_function_decl_cleanup;
 
-	node->u_function.body = NULL; // TODO: parse function body
-
-	Token cc = Parser_expect_token(false, parser, TOKEN_CLOSE_CURLY);
-	if(!cc.type) return false;
-
-	node->type = CX_AST_NODE_TYPE_FUNCTION;
+	out->type = CX_AST_NODE_TYPE_FUNCTION_DECL;
 	return true;
+
+Parser_next_function_decl_cleanup:
+	parser->cur = saved_cur;
+	CX_AST_Node_free(*out);
+	return false;
 }
 
-void Parser_next_node(Parser *parser, CX_AST_Node *node) {
-	node->type = 0;
-	size_t saved_cur = parser->cur;
-	
-	{ // function
-		if(Parser_next_function(parser, node)) return;
-		parser->cur = saved_cur;
-	}
+void Parser_next_root_child(Parser *parser, CX_AST_Node *parent, CX_AST_Node *out) {
+	CX_AST_Node zero = { 0 };
+	*out = zero;
+
+	if(Parser_next_function_decl(parser, parent, out)) return;
+
+	*out = zero;
 }
 
 // Semantic analysis
@@ -876,12 +1027,20 @@ void analyse_semantics(CX_AST_Node *ast, SemanticStructure *semantic_structure) 
 			for(size_t i = 0; i < ast->u_root.len; ++i)
 				analyse_semantics(&ast->u_root.data[i], semantic_structure);
 			break;
-		case CX_AST_NODE_TYPE_FUNCTION:
-			if(!HashMap_at(semantic_structure->data_types, ast->u_function.data_type.value_sv))
-				loc_error(ast->u_function.data_type.location, "unknown data type: " PRIsv "\n", PRIsv_arg(ast->u_function.data_type.value_sv));
-			analyse_semantics(ast->u_function.body, semantic_structure);
+		case CX_AST_NODE_TYPE_NUMBER_LIT:
+			// TODO
 			break;
-		default:
+		case CX_AST_NODE_TYPE_RETURN_STMT:
+			// TODO
+			break;
+		case CX_AST_NODE_TYPE_COMPOUND_STMT:
+			for(size_t i = 0; i < ast->u_compound_stmt.len; ++i)
+				analyse_semantics(&ast->u_compound_stmt.data[i], semantic_structure);
+			break;
+		case CX_AST_NODE_TYPE_FUNCTION_DECL:
+			if(!HashMap_at(semantic_structure->data_types, ast->u_function_decl.data_type.value_sv))
+				loc_error(ast->u_function_decl.data_type.location, " %d unknown data type: " PRIsv "\n", __LINE__, PRIsv_arg(ast->u_function_decl.data_type.value_sv));
+			analyse_semantics(ast->u_function_decl.body, semantic_structure);
 			break;
 	}
 }
@@ -965,7 +1124,8 @@ int main(int argc, char **argv) {
 			Lexer lexer = {
 				.file_path = source_filename,
 				.source = source_code.data,
-				.source_len = source_code.len
+				.source_len = source_code.len,
+				.eof = false
 			};
 
 			DARRAY_INIT(Token)(&tokens, 1);
@@ -975,6 +1135,11 @@ int main(int argc, char **argv) {
 				DARRAY_PUSH(Token)(&tokens, token);
 			}
 
+			Token eof = (Token) { 0 };
+			eof.type = TOKEN_EOF;
+
+			DARRAY_PUSH(Token)(&tokens, eof);
+
 		}
 
 		{
@@ -982,18 +1147,17 @@ int main(int argc, char **argv) {
 
 			Parser parser = {
 				.tokens = &tokens,
-				.cur = 0
+				.cur = 0,
+				.eof = false
 			};
 
 			CX_AST_Node_root(&root);
 
-			while(true) {
+			while(!parser.eof) {
 				CX_AST_Node node;
-				Parser_next_node(&parser, &node);
+				Parser_next_root_child(&parser, &root, &node);
 				if(node.type) {
 					DARRAY_PUSH(CX_AST_Node)((DARRAY(CX_AST_Node)*) &root.u_root, node);
-				} else {
-					break;
 				}
 			};
 
