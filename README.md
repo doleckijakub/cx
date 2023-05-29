@@ -28,7 +28,7 @@ $ ./cx test.cx -o test.c
 $ gcc test.c -o test
 ```
 
-## Implemented features
+<!-- ## Implemented features
 
 
 - [ ] self hosting
@@ -40,3 +40,4 @@ $ gcc test.c -o test
 - [ ] OOP
 - [ ] variadics
 - [ ] all in one build system
+ -->
