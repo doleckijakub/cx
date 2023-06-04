@@ -1,10 +1,6 @@
 # CX - C Extended
 
-<<<<<<< HEAD
 [[![CI](https://github.com/doleckijakub/cx/actions/workflows/build.yml/badge.svg)]](https://github.com/doleckijakub/cx/actions/workflows/build.yml)
-=======
-![CI](https://github.com/doleckijakub/cx/actions/workflows/build.yml/badge.svg)
->>>>>>> a20a06a8c82ae730d5f89fe159f9a2fba9b7bd68
 
 ## Notice
 
