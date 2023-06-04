@@ -1,6 +1,6 @@
 # CX - C Extended
 
-[[![CI](https://github.com/doleckijakub/cx/actions/workflows/build.yml/badge.svg)]](https://github.com/doleckijakub/cx/actions/workflows/build.yml)
+[![CI](https://github.com/doleckijakub/cx/actions/workflows/build.yml/badge.svg)](https://github.com/doleckijakub/cx/actions/workflows/build.yml)
 
 ## Notice
 
